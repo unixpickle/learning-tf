@@ -39,7 +39,7 @@ def main():
 
 class RNN:
     """
-    RNN is a single-layer Echo State Network block.
+    RNN is a single-layer vanilla RNN.
     """
     def __init__(self, states=512, ins=256, outs=256):
         self.num_states = states
