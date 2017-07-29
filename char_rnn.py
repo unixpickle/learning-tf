@@ -1,8 +1,9 @@
 """
-Train an Echo State Network to predict characters in text.
+Train an RNN to predict characters in text.
 """
 
 from math import sqrt
+import random
 
 import numpy as np
 import tensorflow as tf
@@ -11,34 +12,34 @@ NORMALIZING_COEFF = 1.5925374197228312
 
 def main():
     print('Building graph...')
-    esn = ESN(states=64)
-    seqs = TextSequences(batch=4, length=16)
-    outputs = esn.apply_text_sequences(seqs)
+    rnn = RNN(states=128)
+    seqs = TextSequences(batch=16, length=128)
+    outputs = rnn.apply_text_sequences(seqs)
     loss = seqs.loss(outputs)
 
-    print('Training...')
-    batch = seqs.build_feed_dict([
-        'Hello, world!',
-        'Goodbye, world!',
-        'Bonjour, world!',
-        'Peace out!'
-    ])
     opt = tf.train.AdamOptimizer()
     minimize = opt.minimize(loss)
+
+    print('Training...')
+    train_data, val_data = load_data()
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        for i in range(1, 1000):
+        for iteration in range(1, 1000):
+            batch = seqs.build_feed_dict(random_samples(train_data, seqs.batch))
             sess.run(minimize, feed_dict=batch)
-            if i % 10 == 0:
-                print('iter %d: loss=%f' % (i, sess.run(loss, feed_dict=batch)))
-
+            if iteration % 10 == 0:
+                train_loss = sess.run(loss, feed_dict=batch)
+                batch = seqs.build_feed_dict(random_samples(val_data, seqs.batch))
+                val_loss = sess.run(loss, feed_dict=batch)
+                print('iter %d: loss=%f val_loss=%f' %
+                      (iteration, train_loss, val_loss))
         print('Sampling...')
         for i in range(0, 10):
-            print(str(esn.sample_sequence(sess), 'utf-8'))
+            print(rnn.sample_sequence(sess))
 
-class ESN:
+class RNN:
     """
-    ESN is a single-layer Echo State Network block.
+    RNN is a single-layer Echo State Network block.
     """
     def __init__(self, states=512, ins=256, outs=256):
         self.num_states = states
@@ -83,29 +84,31 @@ class ESN:
         """
         chars = []
         state = sess.run(self.init_state)
-        last_char = np.zeros(256)
 
-        # start with \n
+        # Start with \n.
+        last_char = np.zeros(256)
         last_char[10] = 1
 
+        state_in = tf.placeholder(tf.float32, shape=[1, self.num_states])
+        char_in = tf.placeholder(tf.float32, shape=[1, 256])
+        state_out, char_out = self.apply(state_in, char_in)
+        probs_out = tf.nn.softmax(char_out)
+
         while True:
-            state_in = tf.placeholder(tf.float32, shape=[1, self.num_states])
-            char_in = tf.placeholder(tf.float32, shape=[1, 256])
-            state_out, char_out = self.apply(state_in, char_in)
             args = {
                 state_in: state,
                 char_in: [last_char],
             }
-            out_probs = sess.run(tf.nn.softmax(char_out), feed_dict=args)[0]
+            probs = sess.run(probs_out, feed_dict=args)[0]
             state = sess.run(state_out, feed_dict=args)
-            idx = np.random.choice(range(0, 256), p=out_probs)
+            idx = np.random.choice(range(0, 256), p=probs)
             if idx == 0:
                 break
             chars.append(idx)
             last_char = np.zeros(256)
             last_char[idx] = 1
-        return bytearray(chars)
 
+        return bytearray(chars)
 
 class TextSequences:
     """
@@ -160,5 +163,22 @@ class TextSequences:
             else:
                 cost_sum += loss
         return cost_sum / (self.batch * self.length)
+
+def load_data():
+    """
+    Load the data as lists of strings.
+    Returns (training, validation).
+    """
+    with open('char_rnn_data.txt', encoding='utf-8') as file:
+        lines = [line.strip() for line in file.readlines()]
+        random.shuffle(lines)
+        return lines[32:], lines[:32]
+
+def random_samples(data, batch):
+    """
+    Select a random mini-batch from the data.
+    """
+    random.shuffle(data)
+    return data[:batch]
 
 main()
