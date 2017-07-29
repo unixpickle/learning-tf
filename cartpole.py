@@ -32,7 +32,7 @@ def main():
         sess.run(tf.global_variables_initializer())
         while True:
             obs, acts, rews, mean_rew = rollouts(env, sess, observations,
-                                                 out_probs, 10000)
+                                                 out_probs, 2000)
             loss_args = {
                 observations: obs,
                 actions: acts,
@@ -52,38 +52,55 @@ def policy(inputs):
 
 def rollouts(env, sess, inputs, out_probs, num_steps):
     """
-    Rollouts runs the environment for up to num_steps
-    timesteps and returns the observations, actions,
-    action goodnesses, and mean reward.
+    Run at least num_steps in the environment and return
+    the observations, actions, goodnesses, and reward.
     """
     observations = []
     actions = []
-    ep_rewards = []
-    ep_lens = []
+    rewards = []
     while len(observations) < num_steps:
-        ep_len = 0
-        ep_reward = 0
-        obs = env.reset()
-        while True:
-            prob = sess.run(out_probs, feed_dict={inputs: [obs]})
-            action = [1, 0]
-            if random.random() < prob[0][1]:
-                action = [0, 1]
-            actions.append(action)
-            observations.append(list(obs))
-            obs, rew, done, _ = env.step(action[0])
-            ep_reward += rew
-            ep_len += 1
-            if done:
-                break
-        ep_rewards.append(ep_reward)
-        ep_lens.append(ep_len)
-    goodnesses = []
-    mean_rew = sum(ep_rewards) / len(ep_rewards)
-    norm_rew = normalize_rewards(ep_rewards)
-    for ep_len, ep_goodness in zip(ep_lens, norm_rew):
-        goodnesses.extend([[ep_goodness] for _ in range(0, ep_len)])
+        ep_obs, ep_acts, ep_rewards = rollout(env, sess, inputs, out_probs)
+        observations.extend(ep_obs)
+        actions.extend(ep_acts)
+        rewards.append(ep_rewards)
+    mean_rew = sum([sum(x) for x in rewards]) / len(rewards)
+    goodnesses = action_goodnesses(rewards)
     return observations, actions, goodnesses, mean_rew
+
+def rollout(env, sess, inputs, out_probs):
+    """
+    Run a single rollout and return the observations,
+    actions, and reward.
+    """
+    obses = []
+    acts = []
+    rewards = []
+    obs = env.reset()
+    while True:
+        prob = sess.run(out_probs, feed_dict={inputs: [obs]})
+        action = [1, 0]
+        if random.random() < prob[0][1]:
+            action = [0, 1]
+        acts.append(action)
+        obses.append(list(obs))
+        obs, rew, done, _ = env.step(action[0])
+        rewards.append(rew)
+        if done:
+            break
+    return obses, acts, rewards
+
+def action_goodnesses(rewards):
+    """
+    Produce, for each action in each episode, a measure of
+    how "good" that action was, as estimated by the total
+    reward of the episode.
+    """
+    goodnesses = []
+    ep_goodnesses = normalize_rewards([sum(x) for x in rewards])
+    ep_lens = [len(x) for x in rewards]
+    for ep_len, ep_goodness in zip(ep_lens, ep_goodnesses):
+        goodnesses.extend([[ep_goodness]] * ep_len)
+    return goodnesses
 
 def normalize_rewards(rewards):
     """
