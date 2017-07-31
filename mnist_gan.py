@@ -104,12 +104,16 @@ class GAN:
         self.gen_fc_biases_2 = tf.Variable(tf.zeros([1, 14*14]))
         self.gen_filters_1 = random_weights([3, 3, 1, 16], 9)
         self.gen_biases_1 = tf.Variable(tf.zeros([1, 1, 16]))
-        self.gen_filters_2 = random_weights([3, 3, 16, 1], 144)
-        self.gen_biases_2 = tf.Variable(tf.zeros([1, 1, 1]))
+        self.gen_filters_2 = random_weights([3, 3, 16, 32], 144)
+        self.gen_biases_2 = tf.Variable(tf.zeros([1, 1, 32]))
+        self.gen_filters_3 = random_weights([3, 3, 32, 1], 288)
+        self.gen_biases_3 = tf.Variable(tf.zeros([1, 1, 1]))
         self.disc_filters_1 = random_weights([3, 3, 1, 16], 9)
         self.disc_biases_1 = tf.Variable(tf.zeros([1, 1, 16]))
         self.disc_filters_2 = random_weights([3, 3, 16, 16], 144)
         self.disc_biases_2 = tf.Variable(tf.zeros([1, 1, 16]))
+        self.disc_filters_3 = random_weights([3, 3, 16, 16], 144)
+        self.disc_biases_3 = tf.Variable(tf.zeros([1, 1, 16]))
         self.disc_weights_1 = random_weights([784, 256], 784)
         self.disc_fc_biases = tf.Variable(tf.zeros([1, 256]))
         self.disc_weights_2 = random_weights([256, 1], 256)
@@ -128,7 +132,9 @@ class GAN:
         conv1 = tf.nn.convolution(full_images, self.gen_filters_1, 'SAME')
         out1 = tf.tanh(conv1 + self.gen_biases_1)
         conv2 = tf.nn.convolution(out1, self.gen_filters_2, 'SAME')
-        return tf.sigmoid(conv2 + self.gen_biases_2)
+        out2 = tf.tanh(conv2 + self.gen_biases_2)
+        conv3 = tf.nn.convolution(out2, self.gen_filters_3, 'SAME')
+        return tf.sigmoid(conv3 + self.gen_biases_3)
 
     def discriminate(self, images):
         """
@@ -141,7 +147,9 @@ class GAN:
         conv2 = tf.nn.convolution(out1, self.disc_filters_2, 'SAME',
                                   strides=[2, 2])
         out2 = tf.nn.relu(conv2 + self.disc_biases_2)
-        fc_in = tf.reshape(out2, [batch_size, 16*7*7])
+        conv3 = tf.nn.convolution(out2, self.disc_filters_3, 'SAME')
+        out3 = tf.nn.relu(conv3 + self.disc_biases_3)
+        fc_in = tf.reshape(out3, [batch_size, 16*7*7])
         fc_out_1 = tf.nn.relu(tf.matmul(fc_in, self.disc_weights_1) +
                               self.disc_fc_biases)
         return tf.matmul(fc_out_1, self.disc_weights_2)
