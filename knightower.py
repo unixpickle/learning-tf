@@ -8,6 +8,7 @@ Currently does not work very well.
 
 import math
 import random
+import threading
 
 import muniverse
 import tensorflow as tf
@@ -25,10 +26,10 @@ def main():
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
+        roller = Roller(sess, policy_in, policy_out)
         while True:
-            obses, actions, rewards, totals = rollouts(sess, policy_in,
-                                                       policy_out)
-            print('mean_reward=%f' % (sum(totals)/len(totals),))
+            obses, actions, rewards, mean = roller.rollouts()
+            print('mean_reward=%f' % (mean,))
             inputs = {
                 policy_in: obses,
                 actions_in: actions,
@@ -59,55 +60,88 @@ def surrogate_objective(policy_out):
     objective = tf.tensordot(tf.log(policy_out), actions*rewards, axes=2)
     return actions, rewards, objective
 
-def rollouts(sess, policy_in, policy_out):
+class Roller:
     """
-    Run the policy through some rollouts.
+    Records and collect batches of environment rollouts.
+    """
+    def __init__(self, sess, policy_in, policy_out):
+        self.sess = sess
+        self.policy_in = policy_in
+        self.policy_out = policy_out
+        self.lock = threading.Lock()
+        self.remaining_eps = 0
+        self.total_rewards = []
+        self.rewards = []
+        self.obses = []
+        self.actions = []
 
-    Return observations, actions, rewards, total_rewards.
-    """
-    spec = muniverse.spec_for_name('Knightower-v0')
-    env = muniverse.Env(spec)
-    obses = []
-    actions = []
-    rewards = []
-    total_rewards = []
-    try:
-        for _ in range(0, 100):
-            obs, act, rew = rollout(sess, env, policy_in, policy_out)
-            obses.extend(obs)
-            actions.extend(act)
-            # Some amount of reward centering.
-            rewards.extend([[x-0.5] for x in rew])
-            total_rewards.append(sum(rew))
-        return obses, actions, rewards, total_rewards
-    finally:
-        env.close()
+    def rollouts(self, num_eps=128, num_threads=8):
+        """
+        Collect the given number of rollouts.
 
-def rollout(sess, env, policy_in, policy_out):
-    """
-    Run a single rollout.
-    Return the rewards, inputs, and selected actions.
-    """
-    rewards = []
-    obses = []
-    actions = []
-    env.reset()
-    obs = env.observe()
-    while True:
-        obses.append(obs)
-        out_dist = sess.run(policy_out, feed_dict={policy_in: [obs]})
-        action = [1, 0]
-        key_action = muniverse.key_for_code('ArrowLeft')
-        if random.random() < out_dist[0][1]:
-            key_action = muniverse.key_for_code('ArrowRight')
-            action = [0, 1]
-        reward, done = env.step(0.1, key_action.with_event('keyDown'),
-                                key_action.with_event('keyUp'))
-        rewards.append(reward)
-        actions.append(action)
+        Returns observations, actions, rewards, mean_reward.
+
+        It is not safe to call this from multiple threads
+        at a single time on one Roller.
+        """
+        self.remaining_eps = num_eps
+        self.total_rewards = []
+        self.rewards = []
+        self.obses = []
+        self.actions = []
+        threads = []
+        for _ in range(0, num_threads):
+            thread = threading.Thread(target=self._run_thread)
+            thread.start()
+            threads.append(thread)
+        for thread in threads:
+            thread.join()
+        mean = sum(self.total_rewards) / len(self.total_rewards)
+        return self.obses, self.actions, self.rewards, mean
+
+    def _run_thread(self):
+        spec = muniverse.spec_for_name('Knightower-v0')
+        env = muniverse.Env(spec)
+        try:
+            while True:
+                self.lock.acquire()
+                if self.remaining_eps == 0:
+                    self.lock.release()
+                    return
+                self.remaining_eps -= 1
+                self.lock.release()
+                obses, actions, rewards = self._rollout(env)
+                self.lock.acquire()
+                self.total_rewards.append(sum(rewards))
+                self.rewards.extend([[x-0.5] for x in rewards])
+                self.obses.extend(obses)
+                self.actions.extend(actions)
+                self.lock.release()
+        finally:
+            env.close()
+
+    def _rollout(self, env):
+        rewards = []
+        obses = []
+        actions = []
+        env.reset()
         obs = env.observe()
-        if done:
-            break
-    return obses, actions, rewards
+        while True:
+            obses.append(obs)
+            out_dist = self.sess.run(self.policy_out,
+                                     feed_dict={self.policy_in: [obs]})
+            action = [1, 0]
+            key_action = muniverse.key_for_code('ArrowLeft')
+            if random.random() < out_dist[0][1]:
+                key_action = muniverse.key_for_code('ArrowRight')
+                action = [0, 1]
+            reward, done = env.step(0.1, key_action.with_event('keyDown'),
+                                    key_action.with_event('keyUp'))
+            rewards.append(reward)
+            actions.append(action)
+            obs = env.observe()
+            if done:
+                break
+        return obses, actions, rewards
 
 main()
