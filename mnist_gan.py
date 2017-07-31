@@ -42,7 +42,7 @@ def create():
 
 def train():
     """
-    Train the model.
+    Load and train a model.
     """
     gan = GAN()
     saver = tf.train.Saver()
@@ -50,11 +50,11 @@ def train():
     samples = Samples()
 
     gen_obj = gan.generator_objective(samples.noise)
-    gen_adam = tf.train.AdamOptimizer()
+    gen_adam = tf.train.AdamOptimizer(learning_rate=1e-4)
     opt_gen = gen_adam.minimize(gen_obj, var_list=gan.generator_vars())
 
     disc_obj = gan.discriminator_objective(samples.noise, samples.images)
-    disc_adam = tf.train.AdamOptimizer()
+    disc_adam = tf.train.AdamOptimizer(learning_rate=1e-4)
     opt_disc = disc_adam.minimize(disc_obj, var_list=gan.discriminator_vars())
     clip_disc = gan.clip_discriminator()
 
@@ -63,7 +63,7 @@ def train():
         saver.restore(sess, SAVE_FILE)
         while True:
             losses = []
-            for _ in range(0, 10):
+            for _ in range(0, 30):
                 batch = samples.sample_feed_dict()
                 losses.append(sess.run(disc_obj, feed_dict=batch))
                 sess.run(opt_disc, feed_dict=batch)
@@ -91,12 +91,12 @@ def generate():
 
 class GAN:
     """
-    GAN is a Generative Adversarial Network for producing
+    A small Generative Adversarial Network for producing
     MNIST digits.
     """
     def __init__(self, noise_size=100):
         """
-        Create a new GAN.
+        Create a new GAN with random weights.
         """
         self.gen_weights_1 = random_weights([noise_size, 14*14], noise_size)
         self.gen_fc_biases_1 = tf.Variable(tf.zeros([1, 14*14]))
@@ -137,16 +137,16 @@ class GAN:
         batch_size = tf.shape(images)[0]
         conv1 = tf.nn.convolution(images, self.disc_filters_1, 'SAME',
                                   strides=[2, 2])
-        out1 = tf.tanh(conv1 + self.disc_biases_1)
+        out1 = tf.nn.relu(conv1 + self.disc_biases_1)
         conv2 = tf.nn.convolution(out1, self.disc_filters_2, 'SAME',
                                   strides=[2, 2])
-        out2 = tf.tanh(conv2 + self.disc_biases_2)
+        out2 = tf.nn.relu(conv2 + self.disc_biases_2)
         fc_in = tf.reshape(out2, [batch_size, 16*7*7])
-        fc_out_1 = tf.tanh(tf.matmul(fc_in, self.disc_weights_1) +
-                           self.disc_fc_biases)
+        fc_out_1 = tf.nn.relu(tf.matmul(fc_in, self.disc_weights_1) +
+                              self.disc_fc_biases)
         return tf.matmul(fc_out_1, self.disc_weights_2)
 
-    def clip_discriminator(self, mag=0.1):
+    def clip_discriminator(self, mag=0.01):
         """
         Return an op to clip the discriminator weights.
         Clips the absolute value in [-mag, mag].
