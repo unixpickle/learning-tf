@@ -70,8 +70,8 @@ class Roller:
         self.policy_out = policy_out
         self.lock = threading.Lock()
         self.remaining_eps = 0
-        self.total_rewards = []
         self.rewards = []
+        self.ep_lens = []
         self.obses = []
         self.actions = []
 
@@ -86,8 +86,8 @@ class Roller:
         at a single time on one Roller.
         """
         self.remaining_eps = num_eps
-        self.total_rewards = []
         self.rewards = []
+        self.ep_lens = []
         self.obses = []
         self.actions = []
         threads = []
@@ -97,8 +97,12 @@ class Roller:
             threads.append(thread)
         for thread in threads:
             thread.join()
-        mean = sum(self.total_rewards) / len(self.total_rewards)
-        return self.obses, self.actions, self.rewards, mean
+        mean = sum(self.rewards) / len(self.rewards)
+        centered = [x - mean for x in self.rewards]
+        goodnesses = []
+        for goodness, ep_len in zip(centered, self.ep_lens):
+            goodnesses.extend([[goodness]] * ep_len)
+        return self.obses, self.actions, goodnesses, mean
 
     def _run_thread(self):
         spec = muniverse.spec_for_name('Knightower-v0')
@@ -113,9 +117,8 @@ class Roller:
                 self.lock.release()
                 obses, actions, rewards = self._rollout(env)
                 self.lock.acquire()
-                self.total_rewards.append(sum(rewards))
-                total = sum(rewards)
-                self.rewards.extend([[total] for _ in rewards])
+                self.rewards.append(sum(rewards))
+                self.ep_lens.append(len(rewards))
                 self.obses.extend(obses)
                 self.actions.extend(actions)
                 self.lock.release()
