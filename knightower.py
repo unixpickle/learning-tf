@@ -28,8 +28,6 @@ def main():
         roller = Roller(sess, policy_in, policy_out)
         while True:
             obses, actions, rewards, mean = roller.rollouts()
-            print(actions)
-            print(rewards)
             print('mean_reward=%f' % (mean,))
             inputs = {
                 policy_in: obses,
@@ -133,7 +131,6 @@ class Roller:
             out_dist = self.sess.run(self.policy_out,
                                      feed_dict={self.policy_in: [obs]})
             action = [1, 0]
-            print(out_dist)
             key_action = muniverse.key_for_code('ArrowLeft')
             if random.random() < out_dist[0][1]:
                 key_action = muniverse.key_for_code('ArrowRight')
