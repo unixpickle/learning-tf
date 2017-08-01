@@ -10,6 +10,7 @@ import random
 import threading
 
 import muniverse
+import numpy as np
 import tensorflow as tf
 
 def main():
@@ -28,7 +29,8 @@ def main():
         roller = Roller(sess, policy_in, policy_out)
         while True:
             obses, actions, rewards, mean = roller.rollouts()
-            print('mean_reward=%f' % (mean,))
+            mean_action = str(np.mean(np.array(actions), axis=0))
+            print('mean_reward=%f, mean_action=%s' % (mean, mean_action))
             inputs = {
                 policy_in: obses,
                 actions_in: actions,
