@@ -1,11 +1,13 @@
 """
-Train an agent on Knightower-v0 in µniverse.
+Train an linear policy on Knightower-v0 in µniverse.
 
 Uses policy gradients with no discount factor.
 
-Currently does not work very well.
+This reaches an average score of 7.5 after a few hours.
+Initial improvement is slow due to the learning rate.
 """
 
+import math
 import random
 import threading
 
@@ -21,8 +23,8 @@ def main():
     policy_out = policy(policy_in)
     actions_in, rewards_in, objective = surrogate_objective(policy_out)
 
-    adam = tf.train.AdamOptimizer(learning_rate=1e-5)
-    minimize = adam.minimize(-objective)
+    optim = tf.train.GradientDescentOptimizer(1e-6)
+    minimize = optim.minimize(-objective)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -75,7 +77,7 @@ class Roller:
         self.obses = []
         self.actions = []
 
-    def rollouts(self, num_eps=128, num_threads=8):
+    def rollouts(self, num_eps=256, num_threads=8):
         """
         Collect the given number of rollouts.
 
@@ -99,9 +101,11 @@ class Roller:
             thread.join()
         mean = sum(self.rewards) / len(self.rewards)
         centered = [x - mean for x in self.rewards]
+        variance = sum([x*x for x in centered]) / len(centered)
+        stddev = math.sqrt(variance)
         goodnesses = []
         for goodness, ep_len in zip(centered, self.ep_lens):
-            goodnesses.extend([[goodness]] * ep_len)
+            goodnesses.extend([[goodness/stddev]] * ep_len)
         return self.obses, self.actions, goodnesses, mean
 
     def _run_thread(self):
