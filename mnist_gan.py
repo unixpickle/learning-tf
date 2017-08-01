@@ -102,6 +102,8 @@ class GAN:
         self.gen_fc_biases_1 = tf.Variable(tf.zeros([1, 14*14]))
         self.gen_weights_2 = random_weights([14*14, 14*14], 14*14)
         self.gen_fc_biases_2 = tf.Variable(tf.zeros([1, 14*14]))
+        self.gen_weights_3 = random_weights([14*14, 14*14], 14*14)
+        self.gen_fc_biases_3 = tf.Variable(tf.zeros([1, 14*14]))
         self.gen_filters_1 = random_weights([3, 3, 1, 16], 9)
         self.gen_biases_1 = tf.Variable(tf.zeros([1, 1, 16]))
         self.gen_filters_2 = random_weights([3, 3, 16, 32], 144)
@@ -123,16 +125,18 @@ class GAN:
         Apply the generator to the batch of noise.
         """
         batch_size = tf.shape(noise)[0]
-        fc_1 = tf.tanh(tf.matmul(noise, self.gen_weights_1) +
-                       self.gen_fc_biases_1)
-        fc_2 = tf.tanh(tf.matmul(fc_1, self.gen_weights_2) +
-                       self.gen_fc_biases_2)
-        small_images = tf.reshape(fc_2, [batch_size, 14, 14, 1])
+        fc_1 = tf.nn.relu(tf.matmul(noise, self.gen_weights_1) +
+                          self.gen_fc_biases_1)
+        fc_2 = tf.nn.relu(tf.matmul(fc_1, self.gen_weights_2) +
+                          self.gen_fc_biases_2)
+        fc_3 = tf.nn.relu(tf.matmul(fc_2, self.gen_weights_3) +
+                          self.gen_fc_biases_3)
+        small_images = tf.reshape(fc_3, [batch_size, 14, 14, 1])
         full_images = tf.image.resize_images(small_images, [28, 28])
         conv1 = tf.nn.convolution(full_images, self.gen_filters_1, 'SAME')
-        out1 = tf.tanh(conv1 + self.gen_biases_1)
+        out1 = tf.nn.relu(conv1 + self.gen_biases_1)
         conv2 = tf.nn.convolution(out1, self.gen_filters_2, 'SAME')
-        out2 = tf.tanh(conv2 + self.gen_biases_2)
+        out2 = tf.nn.relu(conv2 + self.gen_biases_2)
         conv3 = tf.nn.convolution(out2, self.gen_filters_3, 'SAME')
         return tf.sigmoid(conv3 + self.gen_biases_3)
 
@@ -186,8 +190,9 @@ class GAN:
         """
         return [self.gen_filters_1, self.gen_filters_2,
                 self.gen_biases_1, self.gen_biases_1,
-                self.gen_weights_1, self.gen_weights_2,
-                self.gen_fc_biases_1, self.gen_fc_biases_2]
+                self.gen_weights_1, self.gen_weights_2, self.gen_weights_3,
+                self.gen_fc_biases_1, self.gen_fc_biases_2,
+                self.gen_fc_biases_3]
 
     def discriminator_vars(self):
         """
