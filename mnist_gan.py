@@ -107,12 +107,12 @@ class GAN:
             Conv(1, 16),
             Conv(16, 32),
             Conv(32, 32),
-            Conv(32, 1)
+            Conv(32, 1, activation=False)
         ]
         self.discriminator = [
             Conv(1, 16, strides=[2, 2]),
             Conv(16, 32),
-            Conv(32, 16, strides=[2,2]),
+            Conv(32, 16, strides=[2, 2]),
             Reshape([7 * 7 * 16]),
             FC(784, 256),
             FC(256, 256),
@@ -123,7 +123,7 @@ class GAN:
         """
         Apply the generator to the batch of noise.
         """
-        return apply_network(self.generator, noise)
+        return tf.sigmoid(apply_network(self.generator, noise))
 
     def discriminate(self, images):
         """
@@ -202,7 +202,7 @@ class FC:
         stddev = 1 / sqrt(in_count)
         self.weights = tf.Variable(tf.random_normal([in_count, out_count],
                                                     stddev=stddev))
-        self.biases = tf.Variable(tf.zeros([1, out_count]) + stddev)
+        self.biases = tf.Variable(tf.zeros([1, out_count]))
 
     def apply(self, inputs):
         """
@@ -262,12 +262,13 @@ class Conv:
     """
     A 3x3 convolutional layer.
     """
-    def __init__(self, in_depth, out_depth, strides=None):
+    def __init__(self, in_depth, out_depth, strides=None, activation=True):
+        self.activation = activation
         self.strides = strides
         shape = [3, 3, in_depth, out_depth]
         stddev = 1 / sqrt(in_depth * 9)
         self.filters = tf.Variable(tf.random_normal(shape, stddev=stddev))
-        self.biases = tf.Variable(tf.zeros([1, out_depth]) + stddev)
+        self.biases = tf.Variable(tf.zeros([1, out_depth]))
 
     def apply(self, inputs):
         """
@@ -275,7 +276,10 @@ class Conv:
         """
         conv_out = tf.nn.convolution(inputs, self.filters, 'SAME',
                                      strides=self.strides)
-        return tf.nn.relu(conv_out + self.biases)
+        pre_activation = conv_out + self.biases
+        if not self.activation:
+            return pre_activation
+        return tf.nn.relu(pre_activation)
 
     def vars(self):
         """
