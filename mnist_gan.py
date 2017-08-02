@@ -98,65 +98,38 @@ class GAN:
         """
         Create a new GAN with random weights.
         """
-        self.gen_weights_1 = random_weights([noise_size, 14*14], noise_size)
-        self.gen_fc_biases_1 = tf.Variable(tf.zeros([1, 14*14]))
-        self.gen_weights_2 = random_weights([14*14, 14*14], 14*14)
-        self.gen_fc_biases_2 = tf.Variable(tf.zeros([1, 14*14]))
-        self.gen_weights_3 = random_weights([14*14, 14*14], 14*14)
-        self.gen_fc_biases_3 = tf.Variable(tf.zeros([1, 14*14]))
-        self.gen_filters_1 = random_weights([3, 3, 1, 16], 9)
-        self.gen_biases_1 = tf.Variable(tf.zeros([1, 1, 16]))
-        self.gen_filters_2 = random_weights([3, 3, 16, 32], 144)
-        self.gen_biases_2 = tf.Variable(tf.zeros([1, 1, 32]))
-        self.gen_filters_3 = random_weights([3, 3, 32, 1], 288)
-        self.gen_biases_3 = tf.Variable(tf.zeros([1, 1, 1]))
-        self.disc_filters_1 = random_weights([3, 3, 1, 16], 9)
-        self.disc_biases_1 = tf.Variable(tf.zeros([1, 1, 16]))
-        self.disc_filters_2 = random_weights([3, 3, 16, 16], 144)
-        self.disc_biases_2 = tf.Variable(tf.zeros([1, 1, 16]))
-        self.disc_filters_3 = random_weights([3, 3, 16, 16], 144)
-        self.disc_biases_3 = tf.Variable(tf.zeros([1, 1, 16]))
-        self.disc_weights_1 = random_weights([784, 256], 784)
-        self.disc_fc_biases = tf.Variable(tf.zeros([1, 256]))
-        self.disc_weights_2 = random_weights([256, 1], 256)
+        self.generator = [
+            FC(noise_size, 14 * 14),
+            FC(14 * 14, 14 * 14),
+            FC(14 * 14, 14 * 14),
+            Reshape([14, 14, 1]),
+            Resize([28, 28]),
+            Conv(1, 16),
+            Conv(16, 32),
+            Conv(32, 32),
+            Conv(32, 1)
+        ]
+        self.discriminator = [
+            Conv(1, 16, strides=[2, 2]),
+            Conv(16, 32),
+            Conv(32, 16, strides=[2,2]),
+            Reshape([7 * 7 * 16]),
+            FC(784, 256),
+            FC(256, 256),
+            FC(256, 1, activation=False)
+        ]
 
     def generate(self, noise):
         """
         Apply the generator to the batch of noise.
         """
-        batch_size = tf.shape(noise)[0]
-        fc_1 = tf.nn.relu(tf.matmul(noise, self.gen_weights_1) +
-                          self.gen_fc_biases_1)
-        fc_2 = tf.nn.relu(tf.matmul(fc_1, self.gen_weights_2) +
-                          self.gen_fc_biases_2)
-        fc_3 = tf.nn.relu(tf.matmul(fc_2, self.gen_weights_3) +
-                          self.gen_fc_biases_3)
-        small_images = tf.reshape(fc_3, [batch_size, 14, 14, 1])
-        full_images = tf.image.resize_images(small_images, [28, 28])
-        conv1 = tf.nn.convolution(full_images, self.gen_filters_1, 'SAME')
-        out1 = tf.nn.relu(conv1 + self.gen_biases_1)
-        conv2 = tf.nn.convolution(out1, self.gen_filters_2, 'SAME')
-        out2 = tf.nn.relu(conv2 + self.gen_biases_2)
-        conv3 = tf.nn.convolution(out2, self.gen_filters_3, 'SAME')
-        return tf.sigmoid(conv3 + self.gen_biases_3)
+        return apply_network(self.generator, noise)
 
     def discriminate(self, images):
         """
         Apply the discriminator to a batch of images.
         """
-        batch_size = tf.shape(images)[0]
-        conv1 = tf.nn.convolution(images, self.disc_filters_1, 'SAME',
-                                  strides=[2, 2])
-        out1 = tf.nn.relu(conv1 + self.disc_biases_1)
-        conv2 = tf.nn.convolution(out1, self.disc_filters_2, 'SAME',
-                                  strides=[2, 2])
-        out2 = tf.nn.relu(conv2 + self.disc_biases_2)
-        conv3 = tf.nn.convolution(out2, self.disc_filters_3, 'SAME')
-        out3 = tf.nn.relu(conv3 + self.disc_biases_3)
-        fc_in = tf.reshape(out3, [batch_size, 16*7*7])
-        fc_out_1 = tf.nn.relu(tf.matmul(fc_in, self.disc_weights_1) +
-                              self.disc_fc_biases)
-        return tf.matmul(fc_out_1, self.disc_weights_2)
+        return apply_network(self.discriminator, images)
 
     def clip_discriminator(self, mag=0.01):
         """
@@ -188,20 +161,13 @@ class GAN:
         """
         Get the generator variables.
         """
-        return [self.gen_filters_1, self.gen_filters_2,
-                self.gen_biases_1, self.gen_biases_1,
-                self.gen_weights_1, self.gen_weights_2, self.gen_weights_3,
-                self.gen_fc_biases_1, self.gen_fc_biases_2,
-                self.gen_fc_biases_3]
+        return network_vars(self.generator)
 
     def discriminator_vars(self):
         """
         Get the discriminator variables.
         """
-        return [self.disc_filters_1, self.disc_filters_2,
-                self.disc_biases_1, self.disc_biases_1,
-                self.disc_weights_1, self.disc_weights_2,
-                self.disc_fc_biases]
+        return network_vars(self.discriminator)
 
 class Samples:
     """
@@ -227,11 +193,112 @@ class Samples:
             self.noise: noise_batch
         }
 
-def random_weights(shape, fan_in):
+class FC:
     """
-    Create a random weight tensor which preserves the
-    input standard deviation given the number of inputs.
+    A fully connected layer.
     """
-    return tf.Variable(tf.random_normal(shape, stddev=1/sqrt(fan_in)))
+    def __init__(self, in_count, out_count, activation=True):
+        self.activation = activation
+        stddev = 1 / sqrt(in_count)
+        self.weights = tf.Variable(tf.random_normal([in_count, out_count],
+                                                    stddev=stddev))
+        self.biases = tf.Variable(tf.zeros([1, out_count]) + stddev)
+
+    def apply(self, inputs):
+        """
+        Apply the layer to the batch of inputs.
+        """
+        pre_activation = tf.matmul(inputs, self.weights) + self.biases
+        if not self.activation:
+            return pre_activation
+        return tf.nn.relu(pre_activation)
+
+    def vars(self):
+        """
+        Get the parameters of the layer.
+        """
+        return [self.weights, self.biases]
+
+class Reshape:
+    """
+    A layer to reshape inputs.
+    """
+    def __init__(self, shape):
+        self.shape = shape
+
+    def apply(self, inputs):
+        """
+        Apply the layer to a batch of inputs.
+        """
+        out = tf.reshape(inputs, [tf.shape(inputs)[0]] + self.shape)
+        return out
+
+    def vars(self):
+        """
+        Return the parameters of the layer (i.e. []).
+        """
+        return []
+
+class Resize:
+    """
+    A layer to resize image inputs.
+    """
+    def __init__(self, size):
+        self.size = size
+
+    def apply(self, inputs):
+        """
+        Apply the layer to a batch of inputs.
+        """
+        return tf.image.resize_images(inputs, self.size)
+
+    def vars(self):
+        """
+        Return the parameters of the layer (i.e. []).
+        """
+        return []
+
+class Conv:
+    """
+    A 3x3 convolutional layer.
+    """
+    def __init__(self, in_depth, out_depth, strides=None):
+        self.strides = strides
+        shape = [3, 3, in_depth, out_depth]
+        stddev = 1 / sqrt(in_depth * 9)
+        self.filters = tf.Variable(tf.random_normal(shape, stddev=stddev))
+        self.biases = tf.Variable(tf.zeros([1, out_depth]) + stddev)
+
+    def apply(self, inputs):
+        """
+        Apply the layer to the batch of inputs.
+        """
+        conv_out = tf.nn.convolution(inputs, self.filters, 'SAME',
+                                     strides=self.strides)
+        return tf.nn.relu(conv_out + self.biases)
+
+    def vars(self):
+        """
+        Get the parameters of the layer.
+        """
+        return [self.filters, self.biases]
+
+def apply_network(network, inputs):
+    """
+    Apply a neural network (a list of layers).
+    """
+    sub_in = inputs
+    for layer in network:
+        sub_in = layer.apply(sub_in)
+    return sub_in
+
+def network_vars(network):
+    """
+    Concatenate the parameters of each layer in a list.
+    """
+    res = []
+    for layer in network:
+        res.extend(layer.vars())
+    return res
 
 main()
