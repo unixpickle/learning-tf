@@ -1,5 +1,7 @@
 """
-Train a Wasserstein GAN to generate MNIST digits.
+Train a GAN to generate MNIST digits.
+
+Uses a feature matching objective.
 """
 
 from math import sqrt
@@ -49,28 +51,22 @@ def train():
 
     samples = Samples()
 
-    gen_obj = gan.generator_objective(samples.noise)
+    gen_obj = gan.generator_objective(samples.noise, samples.images)
     gen_opt = tf.train.AdamOptimizer(learning_rate=1e-5)
     opt_gen = gen_opt.minimize(gen_obj, var_list=gan.generator_vars())
 
     disc_obj = gan.discriminator_objective(samples.noise, samples.images)
     disc_opt = tf.train.AdamOptimizer(learning_rate=1e-5)
     opt_disc = disc_opt.minimize(disc_obj, var_list=gan.discriminator_vars())
-    clip_disc = gan.clip_discriminator()
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         saver.restore(sess, SAVE_FILE)
         while True:
-            losses = []
-            for _ in range(0, 5):
-                batch = samples.sample_feed_dict()
-                losses.append(sess.run(disc_obj, feed_dict=batch))
-                sess.run(opt_disc, feed_dict=batch)
-                sess.run(clip_disc)
             batch = samples.sample_feed_dict()
-            loss = sess.run(gen_obj, feed_dict=batch)
-            print('disc=%f gen=%f' % (sum(losses)/len(losses), loss))
+            print('disc=%f gen=%f' % (sess.run(disc_obj, feed_dict=batch),
+                                      sess.run(gen_obj, feed_dict=batch)))
+            sess.run(opt_disc, feed_dict=batch)
             sess.run(opt_gen, feed_dict=batch)
             saver.save(sess, SAVE_FILE)
 
@@ -118,6 +114,8 @@ class GAN:
             Conv(32, 16, strides=[2, 2]),
             Reshape([7 * 7 * 16]),
             FC(784, 256),
+        ]
+        self.discriminator_final = [
             FC(256, 1, activation=False)
         ]
 
@@ -127,37 +125,35 @@ class GAN:
         """
         return tf.sigmoid(apply_network(self.generator, noise))
 
-    def discriminate(self, images):
+    def discriminate(self, samples):
         """
-        Apply the discriminator to a batch of images.
+        Apply the discriminator and get a pre-sigmoid
+        probability.
         """
-        return apply_network(self.discriminator, images)
+        disc = self.discriminator + self.discriminator_final
+        return apply_network(disc, samples)
 
-    def clip_discriminator(self, mag=0.01):
-        """
-        Return an op to clip the discriminator weights.
-        Clips the absolute value in [-mag, mag].
-
-        This is necessary for training a WGAN.
-        """
-        disc = self.discriminator_vars()
-        ops = [tf.assign(x, tf.clip_by_value(x, -mag, mag)) for x in disc]
-        return tf.group(*ops)
-
-    def generator_objective(self, noise):
+    def generator_objective(self, noise, samples):
         """
         Get the objective (loss) for the generator.
         """
-        gen_out = self.generate(noise)
-        return -tf.reduce_mean(self.discriminate(gen_out))
+        out_1 = apply_network(self.discriminator, self.generate(noise))
+        out_2 = apply_network(self.discriminator, samples)
+        return tf.reduce_mean(tf.square(out_1 - out_2))
 
     def discriminator_objective(self, noise, samples):
         """
         Get the objective (loss) for the discriminator.
         """
-        gen_samples = self.generate(noise)
-        return tf.reduce_mean(self.discriminate(gen_samples) -
-                              self.discriminate(samples))
+        out_1 = self.discriminate(self.generate(noise))
+        out_2 = self.discriminate(samples)
+        labels_1 = tf.zeros(tf.shape(out_1))
+        labels_2 = tf.ones(tf.shape(out_2))
+        cost_1 = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels_1,
+                                                         logits=out_1)
+        cost_2 = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels_2,
+                                                         logits=out_2)
+        return tf.reduce_mean(cost_1) + tf.reduce_mean(cost_2)
 
     def generator_vars(self):
         """
@@ -169,7 +165,7 @@ class GAN:
         """
         Get the discriminator variables.
         """
-        return network_vars(self.discriminator)
+        return network_vars(self.discriminator + self.discriminator_final)
 
 class Samples:
     """
