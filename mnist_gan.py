@@ -52,11 +52,11 @@ def train():
     samples = Samples()
 
     gen_obj = gan.generator_objective(samples.noise, samples.images)
-    gen_opt = tf.train.AdamOptimizer(learning_rate=1e-5)
+    gen_opt = tf.train.AdamOptimizer(learning_rate=1e-4)
     opt_gen = gen_opt.minimize(gen_obj, var_list=gan.generator_vars())
 
     disc_obj = gan.discriminator_objective(samples.noise, samples.images)
-    disc_opt = tf.train.AdamOptimizer(learning_rate=1e-5)
+    disc_opt = tf.train.AdamOptimizer(learning_rate=1e-4)
     opt_disc = disc_opt.minimize(disc_obj, var_list=gan.discriminator_vars())
 
     with tf.Session() as sess:
