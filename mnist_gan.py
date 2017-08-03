@@ -139,7 +139,9 @@ class GAN:
         """
         out_1 = apply_network(self.discriminator, self.generate(noise))
         out_2 = apply_network(self.discriminator, samples)
-        return tf.reduce_mean(tf.square(out_1 - out_2))
+        mean_1 = tf.reduce_mean(out_1, axis=1)
+        mean_2 = tf.reduce_mean(out_2, axis=1)
+        return tf.reduce_mean(tf.square(mean_1 - mean_2))
 
     def discriminator_objective(self, noise, samples):
         """
