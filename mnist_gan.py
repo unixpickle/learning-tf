@@ -50,12 +50,12 @@ def train():
     samples = Samples()
 
     gen_obj = gan.generator_objective(samples.noise)
-    gen_adam = tf.train.AdamOptimizer(learning_rate=1e-4)
-    opt_gen = gen_adam.minimize(gen_obj, var_list=gan.generator_vars())
+    gen_opt = tf.train.AdamOptimizer(learning_rate=1e-5)
+    opt_gen = gen_opt.minimize(gen_obj, var_list=gan.generator_vars())
 
     disc_obj = gan.discriminator_objective(samples.noise, samples.images)
-    disc_adam = tf.train.AdamOptimizer(learning_rate=1e-4)
-    opt_disc = disc_adam.minimize(disc_obj, var_list=gan.discriminator_vars())
+    disc_opt = tf.train.AdamOptimizer(learning_rate=1e-5)
+    opt_disc = disc_opt.minimize(disc_obj, var_list=gan.discriminator_vars())
     clip_disc = gan.clip_discriminator()
 
     with tf.Session() as sess:
@@ -63,7 +63,7 @@ def train():
         saver.restore(sess, SAVE_FILE)
         while True:
             losses = []
-            for _ in range(0, 30):
+            for _ in range(0, 5):
                 batch = samples.sample_feed_dict()
                 losses.append(sess.run(disc_obj, feed_dict=batch))
                 sess.run(opt_disc, feed_dict=batch)
@@ -100,22 +100,24 @@ class GAN:
         """
         self.generator = [
             FC(noise_size, 14 * 14),
-            FC(14 * 14, 14 * 14),
-            FC(14 * 14, 14 * 14),
             Reshape([14, 14, 1]),
             Resize([28, 28]),
             Conv(1, 16),
             Conv(16, 32),
+            Conv(32, 32),
+            Conv(32, 32),
             Conv(32, 32),
             Conv(32, 1, activation=False)
         ]
         self.discriminator = [
             Conv(1, 16, strides=[2, 2]),
             Conv(16, 32),
+            Conv(32, 32),
+            Conv(32, 32),
+            Conv(32, 32),
             Conv(32, 16, strides=[2, 2]),
             Reshape([7 * 7 * 16]),
             FC(784, 256),
-            FC(256, 256),
             FC(256, 1, activation=False)
         ]
 
@@ -211,7 +213,7 @@ class FC:
         pre_activation = tf.matmul(inputs, self.weights) + self.biases
         if not self.activation:
             return pre_activation
-        return tf.nn.relu(pre_activation)
+        return selu(pre_activation)
 
     def vars(self):
         """
@@ -279,7 +281,7 @@ class Conv:
         pre_activation = conv_out + self.biases
         if not self.activation:
             return pre_activation
-        return tf.nn.relu(pre_activation)
+        return selu(pre_activation)
 
     def vars(self):
         """
@@ -304,5 +306,15 @@ def network_vars(network):
     for layer in network:
         res.extend(layer.vars())
     return res
+
+def selu(x):
+    """
+    Self-normalizing ELU.
+
+    See https://github.com/bioinf-jku/SNNs/blob/master/selu.py.
+    """
+    alpha = 1.6732632423543772848170429916717
+    scale = 1.0507009873554804934193349852946
+    return scale * tf.where(x >= 0.0, x, alpha * tf.nn.elu(x))
 
 main()
