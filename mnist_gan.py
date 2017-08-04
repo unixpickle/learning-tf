@@ -96,6 +96,8 @@ class GAN:
         """
         self.generator = [
             FC(noise_size, 14 * 14),
+            FC(14 * 14, 14 * 14),
+            FC(14 * 14, 14 * 14),
             Reshape([14, 14, 1]),
             Resize([28, 28]),
             Conv(1, 16),
@@ -114,6 +116,7 @@ class GAN:
             Conv(32, 16, strides=[2, 2]),
             Reshape([7 * 7 * 16]),
             FC(784, 256),
+            FC(256, 256),
         ]
         self.discriminator_final = [
             FC(256, 1, activation=False)
