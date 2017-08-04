@@ -13,6 +13,7 @@ import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 
 SAVE_FILE = 'gan.ckpt'
+GRID_SIZE = 5
 
 def main():
     """
@@ -76,13 +77,16 @@ def generate():
     """
     gan = GAN()
     saver = tf.train.Saver()
-    noise = tf.Variable(tf.random_normal([4, 100]))
+    noise = tf.Variable(tf.random_normal([GRID_SIZE**2, 100]))
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         saver.restore(sess, SAVE_FILE)
         out = np.array(sess.run(gan.generate(noise)))
+        cols = [out[i*GRID_SIZE:(i+1)*GRID_SIZE].reshape([28*GRID_SIZE, 28])
+                for i in range(0, GRID_SIZE)]
+        grid = np.concatenate(cols, axis=1)
         pyplot.title('Generated digits')
-        pyplot.imshow(out.reshape([28*4, 28]), cmap='gray')
+        pyplot.imshow(grid, cmap='gray')
         pyplot.show()
 
 class GAN:
@@ -102,9 +106,9 @@ class GAN:
             Resize([28, 28]),
             Conv(1, 16),
             Conv(16, 32),
-            Conv(32, 32),
-            Conv(32, 32),
-            Conv(32, 32),
+            Conv(32, 64),
+            Conv(64, 64),
+            Conv(64, 32),
             Conv(32, 1, activation=False)
         ]
         self.discriminator = [
